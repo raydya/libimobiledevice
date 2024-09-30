@@ -24,6 +24,7 @@ bin_PROGRAMS = \
 	idevicedate \
 	idevicebackup \
 	idevicebackup2 \
+	ideviceprofile \
 	ideviceprovision \
 	idevicedebugserverproxy \
 	idevicediagnostics \
@@ -32,6 +33,7 @@ bin_PROGRAMS = \
 	idevicenotificationproxy \
 	idevicecrashreport \
 	idevicesetlocation \
+	ideviceskipsetup \
 	afcclient
 
 idevicebtlogger_SOURCES = idevicebtlogger.c
@@ -73,6 +75,11 @@ idevicebackup2_SOURCES = idevicebackup2.c
 idevicebackup2_CFLAGS = $(AM_CFLAGS) $(limd_glue_CFLAGS)
 idevicebackup2_LDFLAGS = $(AM_LDFLAGS) $(limd_glue_LIBS)
 idevicebackup2_LDADD = $(top_builddir)/src/libimobiledevice-1.0.la
+
+ideviceprofile_SOURCES = ideviceprofile.c
+ideviceprofile_CFLAGS = $(AM_CFLAGS)
+ideviceprofile_LDFLAGS = $(top_builddir)/common/libinternalcommon.la $(AM_LDFLAGS)
+ideviceprofile_LDADD = $(top_builddir)/src/libimobiledevice-1.0.la
 
 ideviceimagemounter_SOURCES = ideviceimagemounter.c
 ideviceimagemounter_CFLAGS = $(AM_CFLAGS) $(limd_glue_CFLAGS) $(libtatsu_CFLAGS)
@@ -133,6 +140,11 @@ idevicesetlocation_SOURCES = idevicesetlocation.c
 idevicesetlocation_CFLAGS = $(AM_CFLAGS)
 idevicesetlocation_LDFLAGS = $(AM_LDFLAGS)
 idevicesetlocation_LDADD = $(top_builddir)/src/libimobiledevice-1.0.la
+
+ideviceskipsetup_SOURCES = ideviceskipsetup.c
+ideviceskipsetup_CFLAGS = $(AM_CFLAGS)
+ideviceskipsetup_LDFLAGS = $(AM_LDFLAGS)
+ideviceskipsetup_LDADD = $(top_builddir)/src/libimobiledevice-1.0.la
 
 afcclient_SOURCES = afcclient.c
 afcclient_CFLAGS = $(AM_CFLAGS)
