@@ -94,7 +94,7 @@ case ${host_os} in
     win32=true
     AC_DEFINE(WINVER, 0x0501, [minimum Windows version])
     ;;
-  darwin*)
+  darwin*|*android*)
     AC_MSG_RESULT([${host_os}])
     darwin=true
     ;;
