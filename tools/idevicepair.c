@@ -115,30 +115,30 @@ static void print_error_message(lockdownd_error_t err)
 {
 	switch (err) {
 		case LOCKDOWN_E_PASSWORD_PROTECTED:
-			printf("ERROR: Could not validate with device %s because a passcode is set. Please enter the passcode on the device and retry.\n", udid);
+			fprintf(stderr, "ERROR: Could not validate with device %s because a passcode is set. Please enter the passcode on the device and retry.\n", udid);
 			break;
 		case LOCKDOWN_E_INVALID_CONF:
 		case LOCKDOWN_E_INVALID_HOST_ID:
-			printf("ERROR: Device %s is not paired with this host\n", udid);
+            fprintf(stderr, "ERROR: Device %s is not paired with this host\n", udid);
 			break;
 		case LOCKDOWN_E_PAIRING_DIALOG_RESPONSE_PENDING:
-			printf("ERROR: Please accept the trust dialog on the screen of device %s, then attempt to pair again.\n", udid);
+            fprintf(stderr, "ERROR: Please accept the trust dialog on the screen of device %s, then attempt to pair again.\n", udid);
 			break;
 		case LOCKDOWN_E_USER_DENIED_PAIRING:
-			printf("ERROR: Device %s said that the user denied the trust dialog.\n", udid);
+            fprintf(stderr, "ERROR: Device %s said that the user denied the trust dialog.\n", udid);
 			break;
 		case LOCKDOWN_E_PAIRING_FAILED:
-			printf("ERROR: Pairing with device %s failed.\n", udid);
+            fprintf(stderr, "ERROR: Pairing with device %s failed.\n", udid);
 			break;
 		case LOCKDOWN_E_GET_PROHIBITED:
 		case LOCKDOWN_E_PAIRING_PROHIBITED_OVER_THIS_CONNECTION:
-			printf("ERROR: Pairing is not possible over this connection.\n");
+            fprintf(stderr, "ERROR: Pairing is not possible over this connection.\n");
 #ifdef HAVE_WIRELESS_PAIRING
-			printf("To perform a wireless pairing use the -w command line switch. See usage or man page for details.\n");
+			fprintf(stderr, "To perform a wireless pairing use the -w command line switch. See usage or man page for details.\n");
 #endif
 			break;
 		default:
-			printf("ERROR: Device %s returned unhandled error code %d\n", udid, err);
+            fprintf(stderr, "ERROR: Device %s returned unhandled error code %d\n", udid, err);
 			break;
 	}
 }
