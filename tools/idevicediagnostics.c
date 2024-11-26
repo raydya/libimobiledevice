@@ -79,6 +79,7 @@ static void print_usage(int argc, char **argv, int is_error)
 		"\n"
 		"The following OPTIONS are accepted:\n"
 		"  -u, --udid UDID       target specific device by UDID\n"
+        "  -c, --class CLASS     IORegistry entry class\n"
 		"  -n, --network         connect to network device\n"
 		"  -d, --debug           enable communication debugging\n"
 		"  -h, --help            prints usage information\n"
@@ -98,6 +99,7 @@ int main(int argc, char **argv)
 	lockdownd_service_descriptor_t service = NULL;
 	int result = EXIT_FAILURE;
 	const char *udid = NULL;
+    const char *entry_class = NULL;
 	int use_network = 0;
 	int cmd = CMD_NONE;
 	char* cmd_arg = NULL;
@@ -108,6 +110,7 @@ int main(int argc, char **argv)
 		{ "debug", no_argument, NULL, 'd' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "udid", required_argument, NULL, 'u' },
+        { "class", required_argument, NULL, 'c' },
 		{ "network", no_argument, NULL, 'n' },
 		{ "version", no_argument, NULL, 'v' },
 		{ NULL, 0, NULL, 0}
@@ -117,7 +120,7 @@ int main(int argc, char **argv)
 	signal(SIGPIPE, SIG_IGN);
 #endif
 	/* parse cmdline args */
-	while ((c = getopt_long(argc, argv, "dhu:nv", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "dhu:c:nv", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'd':
 			idevice_set_debug_level(1);
@@ -130,6 +133,14 @@ int main(int argc, char **argv)
 			}
 			udid = optarg;
 			break;
+        case 'c':
+            if (!*optarg) {
+                fprintf(stderr, "ERROR: class argument must not be empty!\n");
+                print_usage(argc, argv, 1);
+                return 2;
+            }
+            entry_class = optarg;
+            break;
 		case 'n':
 			use_network = 1;
 			break;
@@ -284,7 +295,7 @@ int main(int argc, char **argv)
 					}
 				break;
 				case CMD_IOREGISTRY_ENTRY:
-					if (diagnostics_relay_query_ioregistry_entry(diagnostics_client, cmd_arg == NULL ? "": cmd_arg, "", &node) == DIAGNOSTICS_RELAY_E_SUCCESS) {
+					if (diagnostics_relay_query_ioregistry_entry(diagnostics_client, cmd_arg == NULL ? "": cmd_arg, entry_class == NULL ? "" : entry_class, &node) == DIAGNOSTICS_RELAY_E_SUCCESS) {
 						if (node) {
 							print_xml(node);
 							result = EXIT_SUCCESS;
