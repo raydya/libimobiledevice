@@ -81,7 +81,6 @@ static void print_usage(int argc, char **argv, int is_error)
 		"\n"
 		"The following OPTIONS are accepted:\n"
 		"  -u, --udid UDID       target specific device by UDID\n"
-        "  -c, --class CLASS     IORegistry entry class\n"
 		"  -n, --network         connect to network device\n"
 		"  -d, --debug           enable communication debugging\n"
 		"  -h, --help            prints usage information\n"
