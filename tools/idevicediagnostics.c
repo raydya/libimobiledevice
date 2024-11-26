@@ -47,7 +47,8 @@ enum cmd_mode {
 	CMD_DIAGNOSTICS,
 	CMD_MOBILEGESTALT,
 	CMD_IOREGISTRY,
-	CMD_IOREGISTRY_ENTRY
+	CMD_IOREGISTRY_ENTRY,
+    CMD_IOREGISTRY_ENTRY_CLASS,
 };
 
 static void print_xml(plist_t node)
@@ -73,6 +74,7 @@ static void print_usage(int argc, char **argv, int is_error)
 		"  mobilegestalt KEY [...]    print mobilegestalt keys passed as arguments separated by a space.\n"
 		"  ioreg [PLANE]              print IORegistry of device, optionally by PLANE (IODeviceTree, IOPower, IOService) (iOS 5+ only)\n"
 		"  ioregentry [KEY]           print IORegistry entry of device (AppleARMPMUCharger, ASPStorage, ...) (iOS 5+ only)\n"
+        "  ioregentryclass [CLASS]    print IORegistry entry class of device (AppleMultitouchSPI, IOPMPowerSource, ...) (iOS 5+ only)\n"
 		"  shutdown                   shutdown device\n"
 		"  restart                    restart device\n"
 		"  sleep                      put device into sleep mode (disconnects from host)\n"
@@ -99,7 +101,6 @@ int main(int argc, char **argv)
 	lockdownd_service_descriptor_t service = NULL;
 	int result = EXIT_FAILURE;
 	const char *udid = NULL;
-    const char *entry_class = NULL;
 	int use_network = 0;
 	int cmd = CMD_NONE;
 	char* cmd_arg = NULL;
@@ -110,7 +111,6 @@ int main(int argc, char **argv)
 		{ "debug", no_argument, NULL, 'd' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "udid", required_argument, NULL, 'u' },
-        { "class", required_argument, NULL, 'c' },
 		{ "network", no_argument, NULL, 'n' },
 		{ "version", no_argument, NULL, 'v' },
 		{ NULL, 0, NULL, 0}
@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 	signal(SIGPIPE, SIG_IGN);
 #endif
 	/* parse cmdline args */
-	while ((c = getopt_long(argc, argv, "dhu:c:nv", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "dhu:nv", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'd':
 			idevice_set_debug_level(1);
@@ -133,14 +133,6 @@ int main(int argc, char **argv)
 			}
 			udid = optarg;
 			break;
-        case 'c':
-            if (!*optarg) {
-                fprintf(stderr, "ERROR: class argument must not be empty!\n");
-                print_usage(argc, argv, 1);
-                return 2;
-            }
-            entry_class = optarg;
-            break;
 		case 'n':
 			use_network = 1;
 			break;
@@ -216,6 +208,13 @@ int main(int argc, char **argv)
 			cmd_arg = strdup(argv[1]);
 		}
 	}
+    else if (!strcmp(argv[0], "ioregentryclass")) {
+        cmd = CMD_IOREGISTRY_ENTRY_CLASS;
+        /* read key */
+        if (argv[1]) {
+            cmd_arg = strdup(argv[1]);
+        }
+    }
 
 	/* verify options */
 	if (cmd == CMD_NONE) {
@@ -294,8 +293,18 @@ int main(int argc, char **argv)
 						printf("ERROR: Unable to query mobilegestalt keys.\n");
 					}
 				break;
+                case CMD_IOREGISTRY_ENTRY_CLASS:
+                    if (diagnostics_relay_query_ioregistry_entry(diagnostics_client, NULL, cmd_arg == NULL ? "": cmd_arg, &node) == DIAGNOSTICS_RELAY_E_SUCCESS) {
+                        if (node) {
+                            print_xml(node);
+                            result = EXIT_SUCCESS;
+                        }
+                    } else {
+                        printf("ERROR: Unable to retrieve IORegistryClass from device.\n");
+                    }
+                    break;
 				case CMD_IOREGISTRY_ENTRY:
-					if (diagnostics_relay_query_ioregistry_entry(diagnostics_client, cmd_arg == NULL ? "": cmd_arg, entry_class == NULL ? "" : entry_class, &node) == DIAGNOSTICS_RELAY_E_SUCCESS) {
+					if (diagnostics_relay_query_ioregistry_entry(diagnostics_client, cmd_arg == NULL ? "": cmd_arg, "", &node) == DIAGNOSTICS_RELAY_E_SUCCESS) {
 						if (node) {
 							print_xml(node);
 							result = EXIT_SUCCESS;
