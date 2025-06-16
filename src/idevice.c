@@ -30,7 +30,7 @@
 #include <errno.h>
 #include <time.h>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -124,32 +124,32 @@ static void id_function(CRYPTO_THREADID *thread)
 #endif
 #endif /* HAVE_OPENSSL */
 
-static void internal_idevice_init(void)
-{
-#if defined(HAVE_OPENSSL)
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	int i;
-	SSL_library_init();
+// Reference: https://stackoverflow.com/a/2390626/1806760
+// Initializer/finalizer sample for MSVC and GCC/Clang.
+// 2010-2016 Joe Lowe. Released into the public domain.
 
-	mutex_buf = malloc(CRYPTO_num_locks() * sizeof(mutex_t));
-	if (!mutex_buf)
-		return;
-	for (i = 0; i < CRYPTO_num_locks(); i++)
-		mutex_init(&mutex_buf[i]);
-
-#if OPENSSL_VERSION_NUMBER < 0x10000000L
-	CRYPTO_set_id_callback(id_function);
+#ifdef __cplusplus
+    #define INITIALIZER(f) \
+        static void f(void); \
+        struct f##_t_ { f##_t_(void) { f(); } }; static f##_t_ f##_; \
+        static void f(void)
+#elif defined(_MSC_VER)
+    #pragma section(".CRT$XCU",read)
+    #define INITIALIZER2_(f,p) \
+        static void f(void); \
+        __declspec(allocate(".CRT$XCU")) void (*f##_)(void) = f; \
+        __pragma(comment(linker,"/include:" p #f "_")) \
+        static void f(void)
+    #ifdef _WIN64
+        #define INITIALIZER(f) INITIALIZER2_(f,"")
+    #else
+        #define INITIALIZER(f) INITIALIZER2_(f,"_")
+    #endif
 #else
-	CRYPTO_THREADID_set_callback(id_function);
+    #define INITIALIZER(f) \
+        static void f(void) __attribute__((__constructor__)); \
+        static void f(void)
 #endif
-	CRYPTO_set_locking_callback(locking_function);
-#endif
-#elif defined(HAVE_GNUTLS)
-	gnutls_global_init();
-#elif defined(HAVE_MBEDTLS)
-	// NO-OP
-#endif
-}
 
 static void internal_idevice_deinit(void)
 {
@@ -181,43 +181,33 @@ static void internal_idevice_deinit(void)
 #endif
 }
 
-static thread_once_t init_once = THREAD_ONCE_INIT;
-static thread_once_t deinit_once = THREAD_ONCE_INIT;
-
-#ifndef HAVE_ATTRIBUTE_CONSTRUCTOR
-  #if defined(__llvm__) || defined(__GNUC__)
-    #define HAVE_ATTRIBUTE_CONSTRUCTOR
-  #endif
-#endif
-
-#ifdef HAVE_ATTRIBUTE_CONSTRUCTOR
-static void __attribute__((constructor)) libimobiledevice_initialize(void)
+INITIALIZER(internal_idevice_init)
 {
-	thread_once(&init_once, internal_idevice_init);
-}
+#if defined(HAVE_OPENSSL)
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+	int i;
+	SSL_library_init();
 
-static void __attribute__((destructor)) libimobiledevice_deinitialize(void)
-{
-	thread_once(&deinit_once, internal_idevice_deinit);
-}
-#elif defined(WIN32)
-BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpReserved)
-{
-	switch (dwReason) {
-	case DLL_PROCESS_ATTACH:
-		thread_once(&init_once,	internal_idevice_init);
-		break;
-	case DLL_PROCESS_DETACH:
-		thread_once(&deinit_once, internal_idevice_deinit);
-		break;
-	default:
-		break;
-	}
-	return 1;
-}
+	mutex_buf = malloc(CRYPTO_num_locks() * sizeof(mutex_t));
+	if (!mutex_buf)
+		return;
+	for (i = 0; i < CRYPTO_num_locks(); i++)
+		mutex_init(&mutex_buf[i]);
+
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
+	CRYPTO_set_id_callback(id_function);
 #else
-#warning No compiler support for constructor/destructor attributes, some features might not be available.
+	CRYPTO_THREADID_set_callback(id_function);
 #endif
+	CRYPTO_set_locking_callback(locking_function);
+#endif
+#elif defined(HAVE_GNUTLS)
+	gnutls_global_init();
+#elif defined(HAVE_MBEDTLS)
+	// NO-OP
+#endif
+	atexit(internal_idevice_deinit);
+}
 
 const char* libimobiledevice_version()
 {
@@ -956,6 +946,20 @@ idevice_error_t idevice_get_udid(idevice_t device, char **udid)
 	return IDEVICE_E_SUCCESS;
 }
 
+unsigned int idevice_get_device_version(idevice_t device)
+{
+	if (!device) {
+		return 0;
+	}
+	if (!device->version) {
+		lockdownd_client_t lockdown = NULL;
+		lockdownd_client_new(device, &lockdown, NULL);
+		// we don't handle any errors here. We should have the product version cached now.
+		lockdownd_client_free(lockdown);
+	}
+	return device->version;
+}
+
 #if defined(HAVE_OPENSSL) || defined(HAVE_GNUTLS)
 typedef ssize_t ssl_cb_ret_type_t;
 #elif defined(HAVE_MBEDTLS)
@@ -1075,13 +1079,14 @@ static long ssl_idevice_bio_callback(BIO *b, int oper, const char *argp, int arg
 	idevice_connection_t conn = (idevice_connection_t)BIO_get_callback_arg(b);
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 	size_t len = (size_t)argi;
-	size_t *processed = (size_t*)&bytes;
 #endif
 	switch (oper) {
 	case (BIO_CB_READ|BIO_CB_RETURN):
 		if (argp) {
 			bytes = internal_ssl_read(conn, (char *)argp, len);
-			*processed = bytes;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+			*processed = (size_t)(bytes < 0) ? 0 : bytes;
+#endif
 			return (long)bytes;
 		}
 		return 0;
@@ -1090,7 +1095,9 @@ static long ssl_idevice_bio_callback(BIO *b, int oper, const char *argp, int arg
 		// fallthrough
 	case (BIO_CB_WRITE|BIO_CB_RETURN):
 		bytes = internal_ssl_write(conn, argp, len);
-		*processed = bytes;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+		*processed = (size_t)(bytes < 0) ? 0 : bytes;
+#endif
 		return (long)bytes;
 	default:
 		return retvalue;
@@ -1239,7 +1246,7 @@ idevice_error_t idevice_connection_enable_ssl(idevice_connection_t connection)
 #if OPENSSL_VERSION_NUMBER < 0x10100002L || \
 	(defined(LIBRESSL_VERSION_NUMBER) && (LIBRESSL_VERSION_NUMBER < 0x2060000fL))
 	/* force use of TLSv1 for older devices */
-	if (connection->device->version < DEVICE_VERSION(10,0,0)) {
+	if (connection->device->version < IDEVICE_DEVICE_VERSION(10,0,0)) {
 #ifdef SSL_OP_NO_TLSv1_1
 		SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
 #endif
@@ -1252,7 +1259,7 @@ idevice_error_t idevice_connection_enable_ssl(idevice_connection_t connection)
 	}
 #else
 	SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_VERSION);
-	if (connection->device->version < DEVICE_VERSION(10,0,0)) {
+	if (connection->device->version < IDEVICE_DEVICE_VERSION(10,0,0)) {
 		SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_VERSION);
 		if (connection->device->version == 0) {
 			/*
@@ -1338,7 +1345,7 @@ idevice_error_t idevice_connection_enable_ssl(idevice_connection_t connection)
 		if (ssl_error == 0 || ssl_error != SSL_ERROR_WANT_READ) {
 			break;
 		}
-#ifdef WIN32
+#ifdef _WIN32
 		Sleep(100);
 #else
 		struct timespec ts = { 0, 100000000 };
@@ -1543,4 +1550,29 @@ idevice_error_t idevice_connection_disable_bypass_ssl(idevice_connection_t conne
 	debug_info("SSL mode disabled");
 
 	return IDEVICE_E_SUCCESS;
+}
+
+const char* idevice_strerror(idevice_error_t err)
+{
+	switch (err) {
+		case IDEVICE_E_SUCCESS:
+			return "Success";
+		case IDEVICE_E_INVALID_ARG:
+			return "Invalid argument";
+		case IDEVICE_E_UNKNOWN_ERROR:
+			return "Unknown Error";
+		case IDEVICE_E_NO_DEVICE:
+			return "No device";
+		case IDEVICE_E_NOT_ENOUGH_DATA:
+			return "Not enough data";
+		case IDEVICE_E_CONNREFUSED:
+			return "Connection refused";
+		case IDEVICE_E_SSL_ERROR:
+			return "SSL error";
+		case IDEVICE_E_TIMEOUT:
+			return "Timeout";
+		default:
+			break;
+	}
+	return "Unknown Error";
 }

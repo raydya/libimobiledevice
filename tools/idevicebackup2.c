@@ -54,7 +54,7 @@
 #define LOCK_ATTEMPTS 50
 #define LOCK_WAIT 200000
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #include <conio.h>
 #define sleep(x) Sleep(x*1000)
@@ -179,7 +179,7 @@ static void mobilebackup_afc_get_file_contents(afc_client_t afc, const char *fil
 
 static int __mkdir(const char* path, int mode)
 {
-#ifdef WIN32
+#ifdef _WIN32
 	return mkdir(path);
 #else
 	return mkdir(path, mode);
@@ -208,7 +208,7 @@ static int mkdir_with_parents(const char *dir, int mode)
 	return res;
 }
 
-#ifdef WIN32
+#ifdef _WIN32
 static int win32err_to_errno(int err_value)
 {
 	switch (err_value) {
@@ -225,7 +225,7 @@ static int win32err_to_errno(int err_value)
 static int remove_file(const char* path)
 {
 	int e = 0;
-#ifdef WIN32
+#ifdef _WIN32
 	if (!DeleteFile(path)) {
 		e = win32err_to_errno(GetLastError());
 	}
@@ -240,7 +240,7 @@ static int remove_file(const char* path)
 static int remove_directory(const char* path)
 {
 	int e = 0;
-#ifdef WIN32
+#ifdef _WIN32
 	if (!RemoveDirectory(path)) {
 		e = win32err_to_errno(GetLastError());
 	}
@@ -461,7 +461,13 @@ static plist_t mobilebackup_factory_info_plist_new(const char* udid, idevice_t d
 	/* Installed Applications */
 	plist_dict_set_item(ret, "Installed Applications", installed_apps);
 
-	plist_dict_set_item(ret, "Last Backup Date", plist_new_date(time(NULL) - MAC_EPOCH, 0));
+	plist_dict_set_item(ret, "Last Backup Date",
+#ifdef HAVE_PLIST_UNIX_DATE
+		plist_new_unix_date(time(NULL))
+#else
+		plist_new_date(time(NULL) - MAC_EPOCH, 0)
+#endif
+	);
 
 	value_node = plist_dict_get_item(root_node, "MobileEquipmentIdentifier");
 	if (value_node)
@@ -774,7 +780,7 @@ static int mb2_handle_send_file(mobilebackup2_client_t mobilebackup2, const char
 	uint32_t bytes = 0;
 	char *localfile = string_build_path(backup_dir, path, NULL);
 	char buf[32768];
-#ifdef WIN32
+#ifdef _WIN32
 	struct _stati64 fst;
 #else
 	struct stat fst;
@@ -785,7 +791,7 @@ static int mb2_handle_send_file(mobilebackup2_client_t mobilebackup2, const char
 	int errcode = -1;
 	int result = -1;
 	uint32_t length;
-#ifdef WIN32
+#ifdef _WIN32
 	uint64_t total;
 	uint64_t sent;
 #else
@@ -816,7 +822,7 @@ static int mb2_handle_send_file(mobilebackup2_client_t mobilebackup2, const char
 		goto leave_proto_err;
 	}
 
-#ifdef WIN32
+#ifdef _WIN32
 	if (_stati64(localfile, &fst) < 0)
 #else
 	if (stat(localfile, &fst) < 0)
@@ -1224,7 +1230,12 @@ static void mb2_handle_list_directory(mobilebackup2_client_t mobilebackup2, plis
 				plist_dict_set_item(fdict, "DLFileType", plist_new_string(ftype));
 				plist_dict_set_item(fdict, "DLFileSize", plist_new_uint(st.st_size));
 				plist_dict_set_item(fdict, "DLFileModificationDate",
-						    plist_new_date(st.st_mtime - MAC_EPOCH, 0));
+#ifdef HAVE_PLIST_UNIX_DATE
+						    plist_new_unix_date(st.st_mtime)
+#else
+						    plist_new_date(st.st_mtime - MAC_EPOCH, 0)
+#endif
+				);
 
 				plist_dict_set_item(dirlist, ep->d_name, fdict);
 				free(fpath);
@@ -1349,7 +1360,7 @@ static void mb2_copy_directory_by_path(const char *src, const char *dst)
 	}
 }
 
-#ifdef WIN32
+#ifdef _WIN32
 #define BS_CC '\b'
 #define my_getch getch
 #else
@@ -1471,8 +1482,6 @@ static void print_usage(int argc, char **argv, int is_error)
 	);
 }
 
-#define DEVICE_VERSION(maj, min, patch) ((((maj) & 0xFF) << 16) | (((min) & 0xFF) << 8) | ((patch) & 0xFF))
-
 int main(int argc, char *argv[])
 {
 	idevice_error_t ret = IDEVICE_E_UNKNOWN_ERROR;
@@ -1538,7 +1547,7 @@ int main(int argc, char *argv[])
 	/* we need to exit cleanly on running backups and restores or we cause havok */
 	signal(SIGINT, clean_exit);
 	signal(SIGTERM, clean_exit);
-#ifndef WIN32
+#ifndef _WIN32
 	signal(SIGQUIT, clean_exit);
 	signal(SIGPIPE, SIG_IGN);
 #endif
@@ -1855,23 +1864,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* get ProductVersion */
-	char *product_version = NULL;
-	int device_version = 0;
-	node_tmp = NULL;
-	lockdownd_get_value(lockdown, NULL, "ProductVersion", &node_tmp);
-	if (node_tmp) {
-		if (plist_get_node_type(node_tmp) == PLIST_STRING) {
-			plist_get_string_val(node_tmp, &product_version);
-		}
-		plist_free(node_tmp);
-		node_tmp = NULL;
-	}
-	if (product_version) {
-		int vers[3] = { 0, 0, 0 };
-		if (sscanf(product_version, "%d.%d.%d", &vers[0], &vers[1], &vers[2]) >= 2) {
-			device_version = DEVICE_VERSION(vers[0], vers[1], vers[2]);
-		}
-	}
+	int device_version = idevice_get_device_version(device);
 
 	/* start notification_proxy */
 	ldret = lockdownd_start_service(lockdown, NP_SERVICE_NAME, &service);
@@ -2077,7 +2070,7 @@ checkpoint:
 				}	else {
 					PRINT_VERBOSE(1, "Incremental backup mode.\n");
 				}
-				if (device_version >= DEVICE_VERSION(16,1,0)) {
+				if (device_version >= IDEVICE_DEVICE_VERSION(16,1,0)) {
 					/* let's wait 2 second to see if the device passcode is requested */
 					int retries = 20;
 					while (retries-- > 0 && !passcode_requested) {
@@ -2258,7 +2251,7 @@ checkpoint:
 			if (newpw || backup_password) {
 				mobilebackup2_send_message(mobilebackup2, "ChangePassword", opts);
 				uint8_t passcode_hint = 0;
-				if (device_version >= DEVICE_VERSION(13,0,0)) {
+				if (device_version >= IDEVICE_DEVICE_VERSION(13,0,0)) {
 					diagnostics_relay_client_t diag = NULL;
 					if (diagnostics_relay_client_start_service(device, &diag, TOOL_NAME) == DIAGNOSTICS_RELAY_E_SUCCESS) {
 						plist_t dict = NULL;
@@ -2336,7 +2329,7 @@ checkpoint:
 					/* device wants to know how much disk space is available on the computer */
 					uint64_t freespace = 0;
 					int res = -1;
-#ifdef WIN32
+#ifdef _WIN32
 					if (GetDiskFreeSpaceEx(backup_directory, (PULARGE_INTEGER)&freespace, NULL, NULL)) {
 						res = 0;
 					}
@@ -2345,7 +2338,7 @@ checkpoint:
 					memset(&fs, '\0', sizeof(fs));
 					res = statvfs(backup_directory, &fs);
 					if (res == 0) {
-						freespace = (uint64_t)fs.f_bavail * (uint64_t)fs.f_bsize;
+						freespace = (uint64_t)fs.f_bavail * (uint64_t)fs.f_frsize;
 					}
 #endif
 					plist_t freespace_item = plist_new_uint(freespace);
